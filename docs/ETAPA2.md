@@ -41,4 +41,4 @@ Desde la raíz: `npm install`, `npm run db:migrate`, `npm run db:check`, `npm ru
 
 ## Pendientes verificables
 
-La documentación funcional v1 detallada de tablas y flujos se conserva para etapas posteriores; sus menciones de Prisma, Docker Compose y base local quedan sustituidas por esta decisión. La conexión real, migración y creación del administrador solo podrán verificarse tras completar `DATABASE_URL` con el proyecto Supabase. Las pruebas de integración requieren una base aislada.
+La documentación funcional v1 detallada de tablas y flujos se conserva para etapas posteriores; la arquitectura vigente usa PostgreSQL en Supabase con `DATABASE_URL`, `pg` y migraciones `node-pg-migrate`. Las pruebas unitarias no requieren base; la integración usa `DATABASE_URL` y limpia únicamente fixtures con IDs creados por la propia suite.

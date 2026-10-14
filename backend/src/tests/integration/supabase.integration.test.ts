@@ -1,15 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import argon2 from 'argon2';
-import { configureSupabaseTestDatabase } from '../../testing/supabase-test-db.js';
-
-// This suite refuses to load the application or pool until the isolated test URL is approved.
-configureSupabaseTestDatabase();
-const [{ pool }, { app }, , inventory] = await Promise.all([
-  import('../../config/db.js'),
-  import('../../app.js'),
-  import('../../modules/auth/auth.service.js'),
-  import('../../modules/inventory/inventory.service.js'),
-]);
+import { pool } from '../../config/db.js';
+import { app } from '../../app.js';
+import * as inventory from '../../modules/inventory/inventory.service.js';
 
 const origin = process.env.FRONTEND_URL ?? 'http://localhost:5173';
 const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
@@ -67,6 +60,15 @@ async function seedActor(role: Actor['role']): Promise<Actor> {
 }
 
 beforeAll(async () => {
+  await pool.query('SELECT 1');
+  const migration = await pool.query("SELECT 1 FROM public.pgmigrations WHERE name='1791985668046_pos_sales'");
+  if (!migration.rowCount) throw new Error('Falta la migración POS en DATABASE_URL. Ejecutá npm run db:migrate antes de la integración.');
+  const tables = await pool.query(
+    `SELECT table_name,COALESCE((SELECT relrowsecurity FROM pg_class WHERE oid=to_regclass('public.'||table_name)),false) AS rls_enabled
+     FROM unnest(ARRAY['pos_sales','pos_sale_items']::text[]) AS required(table_name)
+     WHERE to_regclass('public.'||table_name) IS NOT NULL`,
+  );
+  if (tables.rows.length !== 2 || tables.rows.some((row) => !row.rls_enabled)) throw new Error('La migración POS no dejó las tablas esperadas con RLS.');
   server = app.listen(0, '127.0.0.1');
   await new Promise<void>((resolve, reject) => {
     server.once('listening', resolve);
@@ -85,21 +87,35 @@ beforeAll(async () => {
 }, 30_000);
 
 afterAll(async () => {
+  const client = actors.length ? await pool.connect() : null;
   try {
-    if (variantIds.length) await pool.query('DELETE FROM inventory_movements WHERE variant_id=ANY($1::uuid[])', [variantIds]);
-    if (actors.length) await pool.query('DELETE FROM sessions WHERE user_id=ANY($1::uuid[])', [actors.map((a) => a.id)]);
-    if (variantIds.length) await pool.query('DELETE FROM inventory WHERE variant_id=ANY($1::uuid[])', [variantIds]);
-    if (variantIds.length) await pool.query('DELETE FROM product_variants WHERE id=ANY($1::uuid[])', [variantIds]);
-    if (productIds.length) await pool.query('DELETE FROM products WHERE id=ANY($1::uuid[])', [productIds]);
-    if (categoryIds.length) await pool.query('DELETE FROM categories WHERE id=ANY($1::uuid[])', [categoryIds]);
-    if (actors.length) await pool.query('DELETE FROM users WHERE id=ANY($1::uuid[])', [actors.map((a) => a.id)]);
+    if (client) {
+      await client.query('BEGIN');
+      const actorIds = actors.map((actor) => actor.id);
+      const { rows } = await client.query('SELECT id FROM pos_sales WHERE cashier_id=ANY($1::uuid[])', [actorIds]);
+      const saleIds = rows.map((row) => row.id);
+      if (variantIds.length || saleIds.length) await client.query('DELETE FROM inventory_movements WHERE variant_id=ANY($1::uuid[]) OR sale_id=ANY($2::uuid[])', [variantIds, saleIds]);
+      if (saleIds.length) await client.query('DELETE FROM pos_sale_items WHERE sale_id=ANY($1::uuid[])', [saleIds]);
+      if (saleIds.length) await client.query('DELETE FROM pos_sales WHERE id=ANY($1::uuid[])', [saleIds]);
+      await client.query('DELETE FROM sessions WHERE user_id=ANY($1::uuid[])', [actorIds]);
+      if (variantIds.length) await client.query('DELETE FROM inventory WHERE variant_id=ANY($1::uuid[])', [variantIds]);
+      if (variantIds.length) await client.query('DELETE FROM product_variants WHERE id=ANY($1::uuid[])', [variantIds]);
+      if (productIds.length) await client.query('DELETE FROM products WHERE id=ANY($1::uuid[])', [productIds]);
+      if (categoryIds.length) await client.query('DELETE FROM categories WHERE id=ANY($1::uuid[])', [categoryIds]);
+      await client.query('DELETE FROM users WHERE id=ANY($1::uuid[])', [actorIds]);
+      await client.query('COMMIT');
+    }
+  } catch (error) {
+    if (client) await client.query('ROLLBACK');
+    throw error;
   } finally {
+    client?.release();
     if (server) await new Promise<void>((resolve) => server.close(() => resolve()));
     await pool.end();
   }
 });
 
-describe('integración real con Supabase de pruebas', () => {
+describe('integración real con PostgreSQL configurado en DATABASE_URL', () => {
   it('aplica los permisos por rol y oculta productos/variantes inactivos al catálogo público', async () => {
     const categoryResponse = await request('/api/v1/catalog/categories', adminLogin, 'POST', { name: `Integration ${suffix}`, slug: `integration-${suffix}` });
     expect(categoryResponse.status).toBe(201);
@@ -168,15 +184,86 @@ describe('integración real con Supabase de pruebas', () => {
     await expect(inventory.adjustStock(variantId, -1, 'x'.repeat(501), admin.id)).rejects.toBeDefined();
     expect((await pool.query('SELECT on_hand FROM inventory WHERE variant_id=$1', [variantId])).rows[0].on_hand).toBe(5);
 
-    const concurrent = await Promise.all([
+    const concurrent = await Promise.allSettled([
       inventory.adjustStock(variantId, -4, 'Concurrente A', admin.id),
       inventory.adjustStock(variantId, -4, 'Concurrente B', admin.id),
     ]);
-    expect(concurrent.filter((result) => result !== undefined)).toHaveLength(1);
+    expect(concurrent.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(concurrent.filter((result) => result.status === 'rejected')).toHaveLength(1);
     expect((await pool.query('SELECT on_hand FROM inventory WHERE variant_id=$1', [variantId])).rows[0].on_hand).toBe(1);
     const adminMovements = await request(`/api/v1/inventory/movements?q=IT-${suffix}`, adminLogin);
     expect(adminMovements.status).toBe(200);
     expect(adminMovements.body.movements.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('registra ventas POS de forma atómica e idempotente, y limita el historial al cajero', async () => {
+    const variantId = variantIds[0]!;
+    const sku = `IT-${suffix}`;
+    expect((await request('/api/v1/pos/sales', customerLogin)).status).toBe(403);
+    const customerSale = await request('/api/v1/pos/sales', customerLogin, 'POST', {
+      idempotencyKey: crypto.randomUUID(), paymentMethod: 'OTHER', items: [{ variantId, quantity: 1 }],
+    });
+    expect(customerSale.status).toBe(403);
+
+    const stockReceipt = await request('/api/v1/inventory/receipts', employeeLogin, 'POST', { variantId, quantity: 4, reason: 'Preparación de prueba POS' });
+    expect(stockReceipt.status).toBe(201);
+    await pool.query('UPDATE inventory SET reserved=1 WHERE variant_id=$1', [variantId]);
+
+    const shortCash = await request('/api/v1/pos/sales', adminLogin, 'POST', {
+      idempotencyKey: crypto.randomUUID(), paymentMethod: 'CASH', cashReceived: '19.99', items: [{ variantId, quantity: 2 }],
+    });
+    expect(shortCash.status).toBe(400);
+    expect((await pool.query('SELECT on_hand,reserved FROM inventory WHERE variant_id=$1', [variantId])).rows[0]).toMatchObject({ on_hand: 5, reserved: 1 });
+
+    const saleRequest = {
+      idempotencyKey: crypto.randomUUID(), paymentMethod: 'CASH', cashReceived: '25.00',
+      items: [{ variantId, quantity: 2 }],
+    };
+    const saleResponse = await request('/api/v1/pos/sales', adminLogin, 'POST', saleRequest);
+    expect(saleResponse.status).toBe(201);
+    const sale = saleResponse.body.sale;
+    expect(sale.total).toBe('20.00');
+    expect(sale.change_due).toBe('5.00');
+    expect(sale.status).toBe('COMPLETED');
+    expect(sale.payment_status).toBe('RECORDED');
+    expect(sale.items).toMatchObject([{ sku, quantity: 2, unitPrice: '10.00', lineTotal: '20.00' }]);
+
+    const retry = await request('/api/v1/pos/sales', adminLogin, 'POST', saleRequest);
+    expect(retry.status).toBe(200);
+    expect(retry.body.replayed).toBe(true);
+    expect(retry.body.sale.id).toBe(sale.id);
+    const changedRetry = await request('/api/v1/pos/sales', adminLogin, 'POST', { ...saleRequest, items: [{ variantId, quantity: 1 }] });
+    expect(changedRetry.status).toBe(409);
+
+    const overReserved = await request('/api/v1/pos/sales', adminLogin, 'POST', {
+      idempotencyKey: crypto.randomUUID(), paymentMethod: 'OTHER', items: [{ variantId, quantity: 3 }],
+    });
+    expect(overReserved.status).toBe(409);
+    expect((await pool.query('SELECT on_hand,reserved FROM inventory WHERE variant_id=$1', [variantId])).rows[0]).toMatchObject({ on_hand: 3, reserved: 1 });
+    const saleMovement = await pool.query("SELECT delta,type,sale_id FROM inventory_movements WHERE variant_id=$1 AND type='POS_SALE'", [variantId]);
+    expect(saleMovement.rows).toEqual([{ delta: -2, type: 'POS_SALE', sale_id: sale.id }]);
+
+    const employeeSale = await request('/api/v1/pos/sales', employeeLogin, 'POST', {
+      idempotencyKey: crypto.randomUUID(), paymentMethod: 'DEBIT_CARD', items: [{ variantId, quantity: 1 }],
+    });
+    expect(employeeSale.status).toBe(201);
+    const simultaneousRequest = {
+      idempotencyKey: crypto.randomUUID(), paymentMethod: 'OTHER', items: [{ variantId, quantity: 1 }],
+    };
+    const simultaneous = await Promise.all([
+      request('/api/v1/pos/sales', adminLogin, 'POST', simultaneousRequest),
+      request('/api/v1/pos/sales', adminLogin, 'POST', simultaneousRequest),
+    ]);
+    expect(simultaneous.map((result) => result.status).sort()).toEqual([200, 201]);
+    expect(simultaneous[0].body.sale.id).toBe(simultaneous[1].body.sale.id);
+    const employeeHistory = await request('/api/v1/pos/sales', employeeLogin);
+    expect(employeeHistory.body.sales.map((row: { id: string }) => row.id)).toContain(employeeSale.body.sale.id);
+    expect(employeeHistory.body.sales.map((row: { id: string }) => row.id)).not.toContain(sale.id);
+    const adminHistory = await request('/api/v1/pos/sales', adminLogin);
+    expect(adminHistory.body.sales.map((row: { id: string }) => row.id)).toEqual(expect.arrayContaining([sale.id, employeeSale.body.sale.id, simultaneous[0].body.sale.id]));
+    expect((await request(`/api/v1/pos/sales/${sale.id}`, employeeLogin)).status).toBe(404);
+    expect((await request(`/api/v1/pos/sales/${sale.id}`, adminLogin)).body.sale.id).toBe(sale.id);
+    expect((await request('/api/v1/pos/sales', customerLogin)).status).toBe(403);
   });
 
   it('revoca las sesiones de empleados al desactivar y no las restaura al reactivar', async () => {

@@ -1,4 +1,4 @@
-﻿> Actualización para Etapa 2: este repositorio usa Supabase PostgreSQL mediante DATABASE_URL, pg y SQL parametrizado. Se reemplazan las referencias de este documento a ORM/Prisma, Docker/Docker Compose y PostgreSQL local. El esquema que se migra ahora se limita a usuarios y sesiones; los demás módulos quedan para etapas posteriores. Ver docs/ETAPA2.md para comandos e implementación vigentes.
+> Arquitectura vigente: PostgreSQL alojado en Supabase mediante DATABASE_URL, pg, SQL parametrizado y node-pg-migrate. Ver docs/ETAPA2.md, docs/ETAPA3.md y docs/ETAPA4.md para funcionalidades implementadas.
 
 # 03 â€” Modelo de datos y reglas de integridad
 

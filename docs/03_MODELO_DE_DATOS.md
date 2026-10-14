@@ -1,4 +1,4 @@
-﻿> Actualización para Etapa 2: este repositorio usa Supabase PostgreSQL mediante DATABASE_URL, pg y SQL parametrizado. Se reemplazan las referencias de este documento a ORM/Prisma, Docker/Docker Compose y PostgreSQL local. El esquema que se migra ahora se limita a usuarios y sesiones; los demás módulos quedan para etapas posteriores. Ver docs/ETAPA2.md para comandos e implementación vigentes.
+> Arquitectura vigente: PostgreSQL alojado en Supabase mediante DATABASE_URL, pg, SQL parametrizado y node-pg-migrate. Ver docs/ETAPA2.md, docs/ETAPA3.md y docs/ETAPA4.md para funcionalidades implementadas.
 
 # 02 â€” Arquitectura, infraestructura y seguridad
 
@@ -44,26 +44,21 @@ Dependencias unidireccionales recomendadas: controladores -> servicios -> reposi
 
 ```text
 tienda-deportes/
-  docs/                    # los archivos de esta documentaciÃ³n
-  frontend/
-    src/{app,pages,features,components,services,styles}/
-  backend/
-    src/{config,common,modules,jobs}/
-    prisma/                # schema y migraciones si se usa Prisma
-    tests/
-  infra/
-    docker-compose.yml
-  .env.example
+  docs/
+  frontend/src/ui/
+  backend/src/{config,common,modules,scripts}/
+  backend/migrations/
+  backend/.env.example
   README.md
 ```
 
-No se requiere una app mÃ³vil nativa ni microservicios. Docker Compose simplifica ejecuciÃ³n reproducible en desarrollo; en producciÃ³n se desplegarÃ¡n los mismos componentes con HTTPS, variables seguras y respaldos.
+La estructura implementada mantiene frontend y backend separados; la conexión a PostgreSQL ocurre exclusivamente desde el backend.
 
 ## 4. Seguridad
 
 1. ContraseÃ±as con Argon2id (o bcrypt con parÃ¡metros actuales); nunca en texto plano.
 2. SesiÃ³n del lado servidor con identificador opaco, cookie `HttpOnly`, `Secure` en HTTPS y `SameSite=Lax`; invalidar al cerrar sesiÃ³n o desactivar cuenta.
-3. ValidaciÃ³n estricta de entradas en API (por ejemplo Zod); consultas parametrizadas por ORM.
+3. Validación estricta de entradas en API (Zod) y consultas SQL parametrizadas mediante pg.
 4. Middleware de rol y comprobaciÃ³n de propiedad del recurso en cada endpoint.
 5. ProtecciÃ³n CSRF para escrituras autenticadas por cookie: validar origen y token anti-CSRF.
 6. Rate limit de login y endpoints sensibles; manejo central de excepciones.
@@ -73,8 +68,8 @@ No se requiere una app mÃ³vil nativa ni microservicios. Docker Compose simplif
 
 ## 5. Ambientes
 
-- **Local:** Frontend + Backend + PostgreSQL en Docker Compose, pasarela de prueba simulable; datos semilla.
-- **Pruebas de integraciÃ³n:** DB aislada + credenciales sandbox + endpoint HTTPS de notificaciones.
+- **Desarrollo:** frontend Vite, backend Express y PostgreSQL Supabase configurado mediante DATABASE_URL.
+- **Integración:** usa la misma base Supabase de DATABASE_URL y limpia solo los registros con IDs creados por la suite.
 - **ProducciÃ³n (no obligatoria):** hosting HTTPS, credenciales del comercio, copias de seguridad y polÃ­ticas de datos.
 
 ## 6. Disponibilidad, operaciÃ³n y auditorÃ­a

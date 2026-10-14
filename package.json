@@ -10,8 +10,6 @@
     "test:integration": "npm run test:integration --workspace backend",
     "db:migrate": "npm run db:migrate --workspace backend",
     "db:check": "npm run db:check --workspace backend",
-    "db:migrate:test": "npm run db:migrate:test --workspace backend",
-    "db:check:test": "npm run db:check:test --workspace backend",
     "admin:init": "npm run admin:init --workspace backend"
   },
   "devDependencies": { "concurrently": "^9.2.1" }

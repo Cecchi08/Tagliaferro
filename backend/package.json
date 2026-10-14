@@ -13,8 +13,6 @@
     "test:watch": "vitest --pool=threads --poolOptions.threads.singleThread",
     "db:migrate": "dotenv -e .env -- node-pg-migrate up -m migrations -d DATABASE_URL",
     "db:check": "dotenv -e .env -- tsx src/scripts/check-db.ts",
-    "db:migrate:test": "dotenv -e .env -- tsx src/scripts/assert-test-db-url.ts && dotenv -e .env -- node-pg-migrate up -m migrations -d DATABASE_URL_TEST",
-    "db:check:test": "dotenv -e .env -- tsx src/scripts/check-test-db.ts",
     "admin:init": "dotenv -e .env -- tsx src/scripts/init-admin.ts"
   },
   "dependencies": {

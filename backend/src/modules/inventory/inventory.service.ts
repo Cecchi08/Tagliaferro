@@ -1,6 +1,7 @@
 import { pool } from '../../config/db.js';
 import { AppError } from '../../common/errors.js';
 import type { PoolClient } from 'pg';
+import { insertInventoryMovement, lockActiveInventory, updateOnHand } from './stock-operations.js';
 
 type DbClient = PoolClient;
 
@@ -171,21 +172,11 @@ export async function listInventory(filters: { query?: string; categoryId?: stri
 
 async function changeStock(variantId: string, delta: number, type: 'RECEIPT'|'ADJUSTMENT', reason: string, actorId: string) {
   return transaction(async (client) => {
-    const inventory = await client.query(
-      `SELECT i.variant_id FROM inventory i JOIN product_variants v ON v.id=i.variant_id JOIN products p ON p.id=v.product_id
-       WHERE i.variant_id=$1 AND v.active=true AND p.active=true FOR UPDATE OF i`, [variantId],
-    );
-    if (!inventory.rowCount) throw new AppError(404, 'VARIANT_NOT_FOUND', 'No se encontró una variante activa.');
-    const updated = await client.query(
-      `UPDATE inventory SET on_hand=on_hand+$2,updated_at=now()
-       WHERE variant_id=$1 AND on_hand+$2>=reserved RETURNING on_hand,reserved`, [variantId, delta],
-    );
-    if (!updated.rowCount) throw new AppError(409, 'STOCK_INSUFFICIENT', 'El ajuste no puede reducir el stock por debajo de las unidades reservadas.');
-    const { rows } = await client.query(
-      `INSERT INTO inventory_movements(variant_id,delta,type,reason,actor_id) VALUES($1,$2,$3,$4,$5)
-       RETURNING id,variant_id,delta,type,reason,actor_id,created_at`, [variantId, delta, type, reason.trim(), actorId],
-    );
-    return { movement: rows[0], onHand: updated.rows[0].on_hand, reserved: updated.rows[0].reserved };
+    const inventory = await lockActiveInventory(client, [variantId]);
+    if (!inventory.length) throw new AppError(404, 'VARIANT_NOT_FOUND', 'No se encontró una variante activa.');
+    const updated = await updateOnHand(client, variantId, delta);
+    const movement = await insertInventoryMovement(client, { variantId, delta, type, reason: reason.trim(), actorId });
+    return { movement, onHand: updated.on_hand, reserved: updated.reserved };
   });
 }
 

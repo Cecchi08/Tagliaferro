@@ -18,7 +18,7 @@ describe('lógica pura de autenticación y permisos', () => {
   });
 
   it('genera y verifica hashes Argon2id sin depender de una base de datos', async () => {
-    const password = 'integration-safe-password-123';
+    const password = 'unit-only-password-123';
     const hash = await argon2.hash(password, { type: argon2.argon2id });
     expect(hash).toMatch(/^\$argon2id\$/);
     await expect(argon2.verify(hash,password)).resolves.toBe(true);

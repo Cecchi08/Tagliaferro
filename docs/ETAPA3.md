@@ -42,18 +42,9 @@ La variante nueva inicia con stock cero; se registra el stock inicial desde la a
 
 ## Pruebas
 
-Las pruebas unitarias cubren permisos/lógica pura sin simular PostgreSQL. Las pruebas de integración conectan con un proyecto Supabase **aislado**, crean datos con identificadores propios y eliminan únicamente esas filas al terminar. La integración no usa ni toma como alternativa `DATABASE_URL`: exige `DATABASE_URL_TEST`, valida que sea el Session Pooler de Supabase en el puerto 5432 y cancela si coincide con la base principal configurada.
+Las pruebas unitarias cubren permisos y lógica pura sin simular PostgreSQL. La suite de integración usa la misma `DATABASE_URL` de la aplicación. Sus fixtures se crean con identificadores nuevos, rastreados por la suite, y se borran únicamente esos registros al terminar. Antes de crear datos comprueba `SELECT 1` y que las migraciones y RLS requeridas estén presentes. La integración solo debe ejecutarse con acceso autorizado a esa base.
 
-Configurá `DATABASE_URL_TEST` en `backend/.env` con la cadena Session Pooler (puerto 5432) de un proyecto Supabase dedicado a pruebas. No uses la base productiva ni una base con datos que deban preservarse: la suite inserta y elimina datos de prueba. El ejemplo está en `backend/.env.example`.
-
-Desde la raíz, aplicá las migraciones aditivas y comprobá ese proyecto antes de integrar:
-
-```sh
-npm run db:migrate:test
-npm run db:check:test
-```
-
-Después ejecutá:
+Desde la raíz, ejecutá:
 
 ```sh
 npm run test:unit
@@ -62,8 +53,8 @@ npm test
 npm run build
 ```
 
-`npm test` ejecuta primero las pruebas unitarias y luego la integración real; sin `DATABASE_URL_TEST` falla antes de conectarse. `db:migrate:test` selecciona explícitamente esa variable y no tiene fallback a `DATABASE_URL`. No se ejecutó una migración de pruebas ni una conexión real si no hay un proyecto aislado configurado.
+`npm test` ejecuta las pruebas unitarias y luego la integración real con `DATABASE_URL`. La suite no reinicia la base ni elimina filas existentes; crea y limpia exclusivamente sus propios actores, categoría, producto, variantes, movimientos y ventas.
 
-## Límites de esta etapa
+## Límites de la Etapa 3
 
-No se incluyen POS, reservas, carrito, compras, pedidos, pagos ni proyectos. La columna `reserved` ya permite calcular disponibilidad respetando reservas futuras; esta etapa no crea ni modifica reservas.
+La Etapa 3 no incluyó POS, reservas, carrito, compras, pedidos, pagos ni proyectos. El POS se implementa en [ETAPA4.md](ETAPA4.md). La columna `reserved` permite calcular disponibilidad respetando reservas futuras; esta etapa no crea ni modifica reservas.

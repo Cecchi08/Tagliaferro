@@ -1,7 +1,14 @@
 import { pool } from '../config/db.js';
 
-const requiredTables = ['users','sessions','categories','products','product_variants','inventory','inventory_movements'];
+const requiredTables = ['users','sessions','categories','products','product_variants','inventory','inventory_movements','pos_sales','pos_sale_items'];
+const requiredMigrations = ['1791849600000_users_and_sessions','1791936000000_product_catalog_inventory','1791985668046_pos_sales'];
 try {
+  await pool.query('SELECT 1');
+  console.log('SELECT 1: conexión PostgreSQL disponible.');
+  const migrations = await pool.query('SELECT name FROM public.pgmigrations WHERE name=ANY($1::text[])', [requiredMigrations]);
+  const applied = new Set(migrations.rows.map((row) => row.name));
+  const missingMigrations = requiredMigrations.filter((name) => !applied.has(name));
+  if (missingMigrations.length) throw new Error(`Faltan migraciones: ${missingMigrations.join(', ')}. Ejecutá npm run db:migrate.`);
   const { rows } = await pool.query(
     `SELECT table_name, (to_regclass('public.'||table_name) IS NOT NULL) AS table_exists,
        COALESCE((SELECT relrowsecurity FROM pg_class WHERE oid=to_regclass('public.'||table_name)),false) AS rls_enabled

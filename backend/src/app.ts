@@ -6,6 +6,7 @@ import { env } from './config/env.js';
 import { pool } from './config/db.js';
 import { authRouter } from './modules/auth/auth.routes.js';
 import { inventoryRouter } from './modules/inventory/inventory.routes.js';
+import { posRouter } from './modules/pos/pos.routes.js';
 import { loadAuth, requireCsrf } from './modules/auth/auth.middleware.js';
 import { errorHandler } from './common/errors.js';
 
@@ -24,5 +25,6 @@ app.get('/ready', async (_req, res) => {
 });
 app.use('/api/v1/auth', authRouter);
 app.use('/api/v1', inventoryRouter);
+app.use('/api/v1', posRouter);
 app.use((_req, res) => res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Ruta no encontrada.' } }));
 app.use(errorHandler);
