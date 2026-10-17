@@ -39,13 +39,13 @@ export async function updateOnHand(client: PoolClient, variantId: string, delta:
 
 export async function insertInventoryMovement(
   client: PoolClient,
-  input: { variantId: string; delta: number; type: 'RECEIPT' | 'ADJUSTMENT' | 'POS_SALE'; reason: string; actorId: string; saleId?: string },
+  input: { variantId: string; delta: number; type: 'RECEIPT' | 'ADJUSTMENT' | 'POS_SALE' | 'ECOM_SALE'; reason: string; actorId: string; saleId?: string; orderId?: string },
 ) {
   const { rows } = await client.query(
-    `INSERT INTO inventory_movements(variant_id,delta,type,reason,actor_id,sale_id)
-     VALUES($1,$2,$3,$4,$5,$6)
-     RETURNING id,variant_id,delta,type,reason,actor_id,sale_id,created_at`,
-    [input.variantId, input.delta, input.type, input.reason, input.actorId, input.saleId ?? null],
+    `INSERT INTO inventory_movements(variant_id,delta,type,reason,actor_id,sale_id,order_id)
+     VALUES($1,$2,$3,$4,$5,$6,$7)
+     RETURNING id,variant_id,delta,type,reason,actor_id,sale_id,order_id,created_at`,
+    [input.variantId, input.delta, input.type, input.reason, input.actorId, input.saleId ?? null, input.orderId ?? null],
   );
   return rows[0];
 }

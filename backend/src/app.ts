@@ -7,8 +7,11 @@ import { pool } from './config/db.js';
 import { authRouter } from './modules/auth/auth.routes.js';
 import { inventoryRouter } from './modules/inventory/inventory.routes.js';
 import { posRouter } from './modules/pos/pos.routes.js';
+import { commerceRouter } from './modules/commerce/commerce.routes.js';
+import { projectsRouter } from './modules/projects/projects.routes.js';
 import { loadAuth, requireCsrf } from './modules/auth/auth.middleware.js';
 import { errorHandler } from './common/errors.js';
+import { expireSafeOrders } from './modules/commerce/commerce.service.js';
 
 export const app = express();
 app.disable('x-powered-by');
@@ -23,8 +26,23 @@ app.get('/ready', async (_req, res) => {
   try { await pool.query('SELECT 1'); res.json({ status: 'ready' }); }
   catch { res.status(503).json({ status: 'not-ready' }); }
 });
+app.get('/internal/expire-orders', async (req, res, next) => {
+  if (!env.CRON_SECRET || req.get('authorization') !== `Bearer ${env.CRON_SECRET}`) {
+    return res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'No autorizado.' } });
+  }
+  try {
+    await expireSafeOrders();
+    res.json({ status: 'ok' });
+  } catch (error) { next(error); }
+});
 app.use('/api/v1/auth', authRouter);
 app.use('/api/v1', inventoryRouter);
 app.use('/api/v1', posRouter);
+app.use('/api/v1', commerceRouter);
+app.use('/api/v1', projectsRouter);
 app.use((_req, res) => res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Ruta no encontrada.' } }));
 app.use(errorHandler);
+
+// Vercel detects src/app.ts as the Express function entry point. The local
+// listener and database readiness check remain isolated in src/server.ts.
+export default app;

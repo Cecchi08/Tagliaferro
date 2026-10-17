@@ -13,6 +13,7 @@ const actors: Actor[] = [];
 const categoryIds: string[] = [];
 const productIds: string[] = [];
 const variantIds: string[] = [];
+const projectIds: string[] = [];
 let server: ReturnType<typeof app.listen>;
 let baseUrl: string;
 let admin: Actor;
@@ -61,14 +62,14 @@ async function seedActor(role: Actor['role']): Promise<Actor> {
 
 beforeAll(async () => {
   await pool.query('SELECT 1');
-  const migration = await pool.query("SELECT 1 FROM public.pgmigrations WHERE name='1791985668046_pos_sales'");
-  if (!migration.rowCount) throw new Error('Falta la migración POS en DATABASE_URL. Ejecutá npm run db:migrate antes de la integración.');
+  const migration = await pool.query("SELECT 1 FROM public.pgmigrations WHERE name='1792072000000_store_orders_payments_projects'");
+  if (!migration.rowCount) throw new Error('Falta la migración de tienda/proyectos en DATABASE_URL. Ejecutá npm run db:migrate antes de la integración.');
   const tables = await pool.query(
     `SELECT table_name,COALESCE((SELECT relrowsecurity FROM pg_class WHERE oid=to_regclass('public.'||table_name)),false) AS rls_enabled
-     FROM unnest(ARRAY['pos_sales','pos_sale_items']::text[]) AS required(table_name)
+     FROM unnest(ARRAY['pos_sales','pos_sale_items','store_orders','stock_reservations','projects','project_phases','project_tasks','project_task_events']::text[]) AS required(table_name)
      WHERE to_regclass('public.'||table_name) IS NOT NULL`,
   );
-  if (tables.rows.length !== 2 || tables.rows.some((row) => !row.rls_enabled)) throw new Error('La migración POS no dejó las tablas esperadas con RLS.');
+  if (tables.rows.length !== 8 || tables.rows.some((row) => !row.rls_enabled)) throw new Error('Las migraciones no dejaron las tablas esperadas con RLS.');
   server = app.listen(0, '127.0.0.1');
   await new Promise<void>((resolve, reject) => {
     server.once('listening', resolve);
@@ -97,6 +98,12 @@ afterAll(async () => {
       if (variantIds.length || saleIds.length) await client.query('DELETE FROM inventory_movements WHERE variant_id=ANY($1::uuid[]) OR sale_id=ANY($2::uuid[])', [variantIds, saleIds]);
       if (saleIds.length) await client.query('DELETE FROM pos_sale_items WHERE sale_id=ANY($1::uuid[])', [saleIds]);
       if (saleIds.length) await client.query('DELETE FROM pos_sales WHERE id=ANY($1::uuid[])', [saleIds]);
+      if (projectIds.length) {
+        await client.query('DELETE FROM project_task_events WHERE task_id IN (SELECT id FROM project_tasks WHERE project_id=ANY($1::uuid[]))', [projectIds]);
+        await client.query('DELETE FROM project_tasks WHERE project_id=ANY($1::uuid[])', [projectIds]);
+        await client.query('DELETE FROM project_phases WHERE project_id=ANY($1::uuid[])', [projectIds]);
+        await client.query('DELETE FROM projects WHERE id=ANY($1::uuid[])', [projectIds]);
+      }
       await client.query('DELETE FROM sessions WHERE user_id=ANY($1::uuid[])', [actorIds]);
       if (variantIds.length) await client.query('DELETE FROM inventory WHERE variant_id=ANY($1::uuid[])', [variantIds]);
       if (variantIds.length) await client.query('DELETE FROM product_variants WHERE id=ANY($1::uuid[])', [variantIds]);
@@ -282,5 +289,28 @@ describe('integración real con PostgreSQL configurado en DATABASE_URL', () => {
     expect((await pool.query('SELECT active FROM users WHERE id=$1', [target.id])).rows[0].active).toBe(true);
     expect((await pool.query('SELECT revoked_at FROM sessions WHERE id=$1', [sessionId])).rows[0].revoked_at).not.toBeNull();
     expect((await request('/api/v1/inventory', targetLogin)).status).toBe(401);
+  });
+
+  it('restringe proyectos por rol, asigna tareas y registra progreso', async () => {
+    expect((await request('/api/v1/store/orders', customerLogin)).status).toBe(200);
+    expect((await request('/api/v1/store/orders', adminLogin)).status).toBe(403);
+    expect((await request('/api/v1/store/orders', employeeLogin)).status).toBe(403);
+    const created = await request('/api/v1/projects', adminLogin, 'POST', { title: `Proyecto ${suffix}`, description: 'Fixture identificable de integración', status: 'ACTIVE' });
+    expect(created.status).toBe(201);
+    const projectId = created.body.project.id as string;
+    projectIds.push(projectId);
+    const phase = await request(`/api/v1/projects/${projectId}/phases`, adminLogin, 'POST', { title: 'Ejecución', position: 1 });
+    expect(phase.status).toBe(201);
+    const task = await request(`/api/v1/projects/${projectId}/tasks`, adminLogin, 'POST', { phaseId: phase.body.phase.id, title: `Tarea ${suffix}`, assigneeId: employee.id, priority: 'HIGH' });
+    expect(task.status).toBe(201);
+    expect((await request('/api/v1/projects', employeeLogin)).body.projects.map((p: {id:string})=>p.id)).toContain(projectId);
+    expect((await request(`/api/v1/projects/${projectId}`, customerLogin)).status).toBe(403);
+    expect((await request(`/api/v1/projects/tasks/${task.body.task.id}`, customerLogin, 'PATCH', { status: 'DONE' })).status).toBe(403);
+    expect((await request(`/api/v1/projects/${projectId}`, adminLogin, 'PATCH', { status: 'COMPLETED' })).status).toBe(409);
+    expect((await request(`/api/v1/projects/tasks/${task.body.task.id}`, employeeLogin, 'PATCH', { status: 'DONE' })).status).toBe(200);
+    expect((await request(`/api/v1/projects/${projectId}`, adminLogin, 'PATCH', { status: 'COMPLETED' })).status).toBe(200);
+    const events = await pool.query(`SELECT count(*)::int count FROM project_task_events e JOIN project_tasks t ON t.id=e.task_id WHERE t.project_id=$1`, [projectId]);
+    expect(events.rows[0].count).toBeGreaterThanOrEqual(2);
+    expect((await request('/api/v1/pos/sales', customerLogin)).status).toBe(403);
   });
 });

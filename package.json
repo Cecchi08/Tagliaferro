@@ -10,7 +10,8 @@
     "test:integration": "npm run test:integration --workspace backend",
     "db:migrate": "npm run db:migrate --workspace backend",
     "db:check": "npm run db:check --workspace backend",
-    "admin:init": "npm run admin:init --workspace backend"
+    "admin:init": "npm run admin:init --workspace backend",
+    "orders:expire": "npm run orders:expire --workspace backend"
   },
   "devDependencies": { "concurrently": "^9.2.1" }
 }

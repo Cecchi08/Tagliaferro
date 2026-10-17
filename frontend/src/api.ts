@@ -1,4 +1,9 @@
-const API = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
+// Production must provide the public API origin at build time. Localhost is
+// only a development fallback, never silently baked into a production build.
+const API = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:3000' : '');
+if (import.meta.env.PROD && !API) {
+  throw new Error('Falta VITE_API_URL: configurá el origen HTTPS del backend en el proyecto Vercel del frontend.');
+}
 let csrfToken = '';
 export function setCsrfToken(token: string) { csrfToken = token; }
 export async function api<T>(path: string, options: RequestInit = {}): Promise<T> {

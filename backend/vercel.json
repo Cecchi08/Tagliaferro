@@ -1,0 +1,8 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "express",
+  "buildCommand": "npm run build",
+  "crons": [
+    { "path": "/internal/expire-orders", "schedule": "0 3 * * *" }
+  ]
+}
