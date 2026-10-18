@@ -1,4 +1,5 @@
 import express from 'express';
+import type { RequestHandler } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
@@ -14,7 +15,8 @@ import { errorHandler } from './common/errors.js';
 
 export const app = express();
 app.disable('x-powered-by');
-app.use(helmet());
+const helmetMiddleware = (helmet as unknown as () => RequestHandler)();
+app.use(helmetMiddleware);
 app.use(cors({ origin: (origin, callback) => callback(null, !origin || origin === env.FRONTEND_URL), credentials: true, methods: ['GET', 'POST', 'PATCH', 'OPTIONS'], allowedHeaders: ['Content-Type', 'X-CSRF-Token'] }));
 app.use(express.json({ limit: '20kb' }));
 app.use(cookieParser());
