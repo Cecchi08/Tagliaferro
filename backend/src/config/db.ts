@@ -8,6 +8,7 @@ export const pool = new pg.Pool({
   max: 3,
   connectionTimeoutMillis: 10_000,
   idleTimeoutMillis: 30_000,
+  allowExitOnIdle: true,
   ssl: env.NODE_ENV === 'development' && /localhost|127\.0\.0\.1/.test(env.DATABASE_URL)
     ? false
     : { rejectUnauthorized: false },

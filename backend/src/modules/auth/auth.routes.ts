@@ -2,7 +2,6 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { rateLimit } from 'express-rate-limit';
 import { asyncRoute, AppError } from '../../common/errors.js';
-import { env } from '../../config/env.js';
 import * as service from './auth.service.js';
 import { requireAuth, requireRole } from './auth.middleware.js';
 
@@ -11,7 +10,8 @@ const authLimiter = rateLimit({ windowMs: 15 * 60_000, limit: 10, standardHeader
 const registerSchema = z.object({ name: z.string().trim().min(2).max(100), email: z.email().max(254), password: z.string().min(12).max(128) });
 const employeeSchema = registerSchema;
 const emailSchema = z.object({ email: z.email().max(254), password: z.string().min(1).max(128) });
-const cookieOptions = () => ({ httpOnly: true, secure: env.COOKIE_SECURE || env.NODE_ENV === 'production', sameSite: 'lax' as const, path: '/', maxAge: env.SESSION_TTL_HOURS * 3_600_000 });
+const COOKIE_NAME = 'tienda_session';
+const cookieOptions = () => ({ httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax' as const, path: '/', maxAge: 24 * 3_600_000 });
 
 authRouter.post('/register', authLimiter, asyncRoute(async (req, res) => {
   const input = registerSchema.parse(req.body);
@@ -21,12 +21,12 @@ authRouter.post('/register', authLimiter, asyncRoute(async (req, res) => {
 authRouter.post('/login', authLimiter, asyncRoute(async (req, res) => {
   const input = emailSchema.parse(req.body);
   const session = await service.login(input.email, input.password);
-  res.cookie(env.SESSION_COOKIE_NAME, session.token, cookieOptions());
+  res.cookie(COOKIE_NAME, session.token, cookieOptions());
   res.json({ user: session.user, csrfToken: session.csrfToken });
 }));
 authRouter.post('/logout', requireAuth, asyncRoute(async (req, res) => {
-  await service.logout(req.cookies?.[env.SESSION_COOKIE_NAME]);
-  res.clearCookie(env.SESSION_COOKIE_NAME, { ...cookieOptions(), maxAge: undefined });
+  await service.logout(req.cookies?.[COOKIE_NAME]);
+  res.clearCookie(COOKIE_NAME, { ...cookieOptions(), maxAge: undefined });
   res.status(204).end();
 }));
 authRouter.get('/me', (req, res) => {

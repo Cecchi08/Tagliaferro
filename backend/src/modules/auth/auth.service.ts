@@ -1,7 +1,6 @@
 import { randomBytes, createHash } from 'node:crypto';
 import argon2 from 'argon2';
 import { pool } from '../../config/db.js';
-import { env } from '../../config/env.js';
 import { AppError } from '../../common/errors.js';
 import type { AuthUser, Role } from './types.js';
 
@@ -28,7 +27,7 @@ export async function login(email: string, password: string) {
   if (!row || !row.active || !(await argon2.verify(row.password_hash, password))) throw new AppError(401, 'INVALID_CREDENTIALS', 'Email o contraseña incorrectos.');
   const token = randomBytes(32).toString('base64url');
   const csrfToken = randomBytes(32).toString('base64url');
-  const expires = new Date(Date.now() + env.SESSION_TTL_HOURS * 3_600_000);
+  const expires = new Date(Date.now() + 24 * 3_600_000);
   await pool.query('INSERT INTO sessions(user_id,token_hash,csrf_token,expires_at) VALUES($1,$2,$3,$4)', [row.id, tokenHash(token), csrfToken, expires]);
   return { user: publicUser(row), token, csrfToken };
 }
@@ -91,21 +90,3 @@ export async function reactivateEmployee(id: string) {
   } catch (e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); }
 }
 
-export async function createInitialAdmin(email: string, password: string) {
-  const hash = await argon2.hash(password, { type: argon2.argon2id });
-  const normalized = email.toLowerCase();
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-    await client.query('SELECT pg_advisory_xact_lock(78123456)');
-    const { rows } = await client.query('SELECT id,role FROM users WHERE email=$1 FOR UPDATE', [normalized]);
-    if (rows[0]) {
-      if (rows[0].role !== 'ADMIN') throw new Error('El email configurado ya pertenece a un usuario que no es administrador.');
-      await client.query('COMMIT'); return 'already-exists';
-    }
-    const count = await client.query("SELECT count(*)::int AS n FROM users WHERE role='ADMIN'");
-    if (count.rows[0].n > 0) throw new Error('Ya existe un administrador; no se creó otro.');
-    await client.query(`INSERT INTO users(name,email,password_hash,role) VALUES($1,$2,$3,'ADMIN')`, ['Administrador', normalized, hash]);
-    await client.query('COMMIT'); return 'created';
-  } catch (e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); }
-}

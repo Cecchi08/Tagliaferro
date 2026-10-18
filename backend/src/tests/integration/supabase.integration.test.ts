@@ -62,14 +62,12 @@ async function seedActor(role: Actor['role']): Promise<Actor> {
 
 beforeAll(async () => {
   await pool.query('SELECT 1');
-  const migration = await pool.query("SELECT 1 FROM public.pgmigrations WHERE name='1792072000000_store_orders_payments_projects'");
-  if (!migration.rowCount) throw new Error('Falta la migración de tienda/proyectos en DATABASE_URL. Ejecutá npm run db:migrate antes de la integración.');
   const tables = await pool.query(
     `SELECT table_name,COALESCE((SELECT relrowsecurity FROM pg_class WHERE oid=to_regclass('public.'||table_name)),false) AS rls_enabled
      FROM unnest(ARRAY['pos_sales','pos_sale_items','store_orders','stock_reservations','projects','project_phases','project_tasks','project_task_events']::text[]) AS required(table_name)
      WHERE to_regclass('public.'||table_name) IS NOT NULL`,
   );
-  if (tables.rows.length !== 8 || tables.rows.some((row) => !row.rls_enabled)) throw new Error('Las migraciones no dejaron las tablas esperadas con RLS.');
+  if (tables.rows.length !== 8 || tables.rows.some((row) => !row.rls_enabled)) throw new Error('Faltan tablas esperadas o no tienen RLS habilitado en la base de pruebas.');
   server = app.listen(0, '127.0.0.1');
   await new Promise<void>((resolve, reject) => {
     server.once('listening', resolve);

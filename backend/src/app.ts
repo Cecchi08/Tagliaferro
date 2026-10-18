@@ -11,12 +11,11 @@ import { commerceRouter } from './modules/commerce/commerce.routes.js';
 import { projectsRouter } from './modules/projects/projects.routes.js';
 import { loadAuth, requireCsrf } from './modules/auth/auth.middleware.js';
 import { errorHandler } from './common/errors.js';
-import { expireSafeOrders } from './modules/commerce/commerce.service.js';
 
 export const app = express();
 app.disable('x-powered-by');
 app.use(helmet());
-app.use(cors({ origin: env.FRONTEND_URL, credentials: true, methods: ['GET', 'POST', 'PATCH', 'OPTIONS'], allowedHeaders: ['Content-Type', 'X-CSRF-Token'] }));
+app.use(cors({ origin: (origin, callback) => callback(null, !origin || origin === env.FRONTEND_URL), credentials: true, methods: ['GET', 'POST', 'PATCH', 'OPTIONS'], allowedHeaders: ['Content-Type', 'X-CSRF-Token'] }));
 app.use(express.json({ limit: '20kb' }));
 app.use(cookieParser());
 app.use(loadAuth);
@@ -25,15 +24,6 @@ app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 app.get('/ready', async (_req, res) => {
   try { await pool.query('SELECT 1'); res.json({ status: 'ready' }); }
   catch { res.status(503).json({ status: 'not-ready' }); }
-});
-app.get('/internal/expire-orders', async (req, res, next) => {
-  if (!env.CRON_SECRET || req.get('authorization') !== `Bearer ${env.CRON_SECRET}`) {
-    return res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'No autorizado.' } });
-  }
-  try {
-    await expireSafeOrders();
-    res.json({ status: 'ok' });
-  } catch (error) { next(error); }
 });
 app.use('/api/v1/auth', authRouter);
 app.use('/api/v1', inventoryRouter);

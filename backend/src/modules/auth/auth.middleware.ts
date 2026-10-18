@@ -5,8 +5,10 @@ import { env } from '../../config/env.js';
 import type { Role } from './types.js';
 import { canAccessRole } from './policies.js';
 
+const COOKIE_NAME = 'tienda_session';
+
 export const loadAuth: RequestHandler = async (req, _res, next) => {
-  const session = await authenticate(req.cookies?.[env.SESSION_COOKIE_NAME]);
+  const session = await authenticate(req.cookies?.[COOKIE_NAME]);
   if (session) { req.auth = session.user; req.csrfToken = session.csrfToken; }
   next();
 };
@@ -18,7 +20,6 @@ export const requireRole = (...roles: Role[]): RequestHandler => (req, _res, nex
 };
 export const requireCsrf: RequestHandler = (req, _res, next) => {
   if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next();
-  if (req.path === '/api/v1/payments/mercadopago/webhook' || req.originalUrl.startsWith('/api/v1/payments/mercadopago/webhook?')) return next();
   const origin = req.get('origin');
   if (origin !== env.FRONTEND_URL) return next(new AppError(403, 'INVALID_ORIGIN', 'Origen no permitido.'));
   if (req.path.endsWith('/register') || req.path.endsWith('/login')) return next();
