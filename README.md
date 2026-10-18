@@ -16,9 +16,9 @@ La base existente ya está configurada en Supabase. Este repositorio ya no conse
 Usá dos proyectos independientes desde el mismo repositorio, con Root Directory `frontend` y `backend` respectivamente. Configurá las variables por entorno en el dashboard de cada proyecto:
 
 - **Backend:** `DATABASE_URL` (cadena de conexión del Supabase Session Pooler, puerto 5432), `FRONTEND_URL` (origen HTTPS exacto del frontend, por ejemplo `https://tienda.example.com`) y `NODE_ENV=production` si Vercel no lo establece automáticamente. `FRONTEND_URL` se configura en Vercel, nunca en `.env`.
-- **Frontend:** `VITE_API_URL` con el origen HTTPS del proyecto backend, por ejemplo `https://api.example.com`. Esta variable queda incorporada en el bundle público y solo debe contener una URL, nunca credenciales.
+- **Frontend:** no necesita una variable de API. `frontend/vercel.json` reescribe `/api/*` hacia el proyecto backend para que el navegador use el mismo origen del frontend y envíe la cookie de sesión de forma compatible.
 
-Para que las cookies `SameSite=Lax` funcionen entre los proyectos, usá dominios del mismo sitio (por ejemplo `tienda.example.com` y `api.example.com`). El backend entrega cookies HTTP-only y seguras en producción. En desarrollo se permiten únicamente el origen local predeterminado y credenciales; en producción falta de `FRONTEND_URL` impide iniciar el backend.
+El frontend proxifica `/api/*` al backend mediante un rewrite externo de Vercel. Las cookies HTTP-only, `Secure` y `SameSite=Lax` quedan bajo el mismo origen del frontend. Configurá `FRONTEND_URL` con `https://tagliaferro.vercel.app` en el proyecto backend; en producción no se permite localhost ni un origen arbitrario.
 
 Vercel compila el backend Express como función y el frontend con Vite en `dist`; las rutas del frontend usan fallback SPA. El pool de PostgreSQL mantiene un máximo pequeño por instancia para Supabase Session Pooler. No se configuran migraciones ni cron de pagos al desplegar.
 
