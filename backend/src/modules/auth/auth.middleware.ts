@@ -20,6 +20,7 @@ export const requireRole = (...roles: Role[]): RequestHandler => (req, _res, nex
 };
 export const requireCsrf: RequestHandler = (req, _res, next) => {
   if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next();
+  if (req.path === '/api/v1/payments/webhook') return next();
   const origin = req.get('origin');
   if (origin !== env.FRONTEND_URL) return next(new AppError(403, 'INVALID_ORIGIN', 'Origen no permitido.'));
   if (req.path.endsWith('/register') || req.path.endsWith('/login')) return next();

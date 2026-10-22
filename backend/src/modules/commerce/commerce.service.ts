@@ -1,5 +1,6 @@
 ﻿import { pool } from '../../config/db.js';
 import { AppError } from '../../common/errors.js';
+import { expirePendingOrders } from './payments.service.js';
 
 export async function getOrder(id: string, customerId: string) {
   const { rows } = await pool.query(
@@ -12,6 +13,7 @@ export async function getOrder(id: string, customerId: string) {
 }
 
 export async function listOrders(customerId: string) {
+  await expirePendingOrders();
   const { rows } = await pool.query(
     'SELECT id,status,total,currency,created_at,expires_at FROM store_orders WHERE customer_id=$1 ORDER BY created_at DESC LIMIT 100',
     [customerId],

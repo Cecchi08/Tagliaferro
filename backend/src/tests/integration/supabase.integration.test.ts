@@ -61,6 +61,9 @@ async function seedActor(role: Actor['role']): Promise<Actor> {
 }
 
 beforeAll(async () => {
+  if (process.env.NODE_ENV === 'production' || process.env.ALLOW_DESTRUCTIVE_TEST_DATABASE !== 'true') {
+    throw new Error('Esta suite crea y elimina fixtures: requiere una base aislada y ALLOW_DESTRUCTIVE_TEST_DATABASE=true. No usar producción.');
+  }
   await pool.query('SELECT 1');
   const tables = await pool.query(
     `SELECT table_name,COALESCE((SELECT relrowsecurity FROM pg_class WHERE oid=to_regclass('public.'||table_name)),false) AS rls_enabled
@@ -299,6 +302,8 @@ describe('integración real con PostgreSQL configurado en DATABASE_URL', () => {
     projectIds.push(projectId);
     const phase = await request(`/api/v1/projects/${projectId}/phases`, adminLogin, 'POST', { title: 'Ejecución', position: 1 });
     expect(phase.status).toBe(201);
+    expect((await request(`/api/v1/projects/${projectId}/phases/${phase.body.phase.id}`, employeeLogin, 'PATCH', { title: 'No permitido' })).status).toBe(403);
+    expect((await request(`/api/v1/projects/${projectId}/phases/${phase.body.phase.id}`, adminLogin, 'PATCH', { title: 'Ejecución revisada', status: 'ACTIVE' })).status).toBe(200);
     const task = await request(`/api/v1/projects/${projectId}/tasks`, adminLogin, 'POST', { phaseId: phase.body.phase.id, title: `Tarea ${suffix}`, assigneeId: employee.id, priority: 'HIGH' });
     expect(task.status).toBe(201);
     expect((await request('/api/v1/projects', employeeLogin)).body.projects.map((p: {id:string})=>p.id)).toContain(projectId);
@@ -309,6 +314,10 @@ describe('integración real con PostgreSQL configurado en DATABASE_URL', () => {
     expect((await request(`/api/v1/projects/${projectId}`, adminLogin, 'PATCH', { status: 'COMPLETED' })).status).toBe(200);
     const events = await pool.query(`SELECT count(*)::int count FROM project_task_events e JOIN project_tasks t ON t.id=e.task_id WHERE t.project_id=$1`, [projectId]);
     expect(events.rows[0].count).toBeGreaterThanOrEqual(2);
+    expect((await request(`/api/v1/projects/${projectId}/phases/${phase.body.phase.id}`, adminLogin, 'DELETE', {})).status).toBe(409);
+    expect((await request(`/api/v1/projects/tasks/${task.body.task.id}`, employeeLogin, 'DELETE', {})).status).toBe(403);
+    expect((await request(`/api/v1/projects/tasks/${task.body.task.id}`, adminLogin, 'DELETE', {})).status).toBe(204);
+    expect((await request(`/api/v1/projects/${projectId}/phases/${phase.body.phase.id}`, adminLogin, 'DELETE', {})).status).toBe(204);
     expect((await request('/api/v1/pos/sales', customerLogin)).status).toBe(403);
   });
 });

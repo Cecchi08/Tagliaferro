@@ -8,7 +8,7 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server.js",
     "test": "npm run test:unit && npm run test:integration",
-    "test:unit": "vitest run --pool=threads --poolOptions.threads.singleThread src/modules/auth/auth.test.ts src/modules/inventory/inventory.test.ts",
+    "test:unit": "vitest run --pool=threads --poolOptions.threads.singleThread src/modules/auth/auth.test.ts src/modules/inventory/inventory.test.ts src/modules/commerce/payments.test.ts",
     "test:integration": "vitest run --pool=threads --poolOptions.threads.singleThread src/tests/integration/supabase.integration.test.ts",
     "test:watch": "vitest --pool=threads --poolOptions.threads.singleThread"
   },

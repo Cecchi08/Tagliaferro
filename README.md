@@ -7,16 +7,16 @@ Aplicación académica full stack: React + TypeScript + Vite, API REST Express +
 - Requiere Node.js y npm.
 - Configurá `backend/.env` con `DATABASE_URL` apuntando al Session Pooler de Supabase (puerto 5432). No se requieren otras variables locales.
 - Ejecutá `npm install` y `npm run dev`. La API escucha en `http://localhost:3000` y Vite en `http://localhost:5173`.
-- El catálogo, las variantes, el carrito, el historial de pedidos, el inventario y el POS permanecen disponibles. El checkout online está deshabilitado hasta incorporar un proveedor de pagos.
+- El catálogo, las variantes, el carrito, el historial de pedidos, el inventario y el POS están disponibles. El checkout online requiere credenciales de Mercado Pago y una URL HTTPS pública; sin ellas devuelve `PAYMENTS_NOT_CONFIGURED` y no crea pedidos.
 
-La base existente ya está configurada en Supabase. Este repositorio ya no conserva el historial de migraciones y no ejecuta cambios de esquema al iniciar o desplegar. No se deben aplicar migraciones desde Vercel.
+El backend usa PostgreSQL de Supabase mediante `pg`. El repositorio no mantiene la carpeta `migrations` y no ejecuta cambios de esquema al iniciar o desplegar. Verificá manualmente el esquema existente de Supabase antes de desplegar una revisión nueva.
 
 ## Despliegue en Vercel
 
 Usá dos proyectos independientes desde el mismo repositorio, con Root Directory `frontend` y `backend` respectivamente. Configurá las variables por entorno en el dashboard de cada proyecto:
 
-- **Backend:** `DATABASE_URL` (cadena de conexión del Supabase Session Pooler, puerto 5432), `FRONTEND_URL` (origen HTTPS exacto del frontend, por ejemplo `https://tienda.example.com`) y `NODE_ENV=production` si Vercel no lo establece automáticamente. `FRONTEND_URL` se configura en Vercel, nunca en `.env`.
-- **Frontend:** no necesita una variable de API. `frontend/vercel.json` reescribe `/api/*` hacia el proyecto backend para que el navegador use el mismo origen del frontend y envíe la cookie de sesión de forma compatible.
+- **Backend:** `DATABASE_URL` (Supabase Session Pooler), `FRONTEND_URL` (origen HTTPS exacto del frontend) y, para activar el pago online, las cuatro variables `MP_ACCESS_TOKEN`, `MP_WEBHOOK_SECRET`, `PUBLIC_API_URL` (origen HTTPS del backend) y `PAYMENT_RETURN_URL` (origen HTTPS del frontend). `NODE_ENV=production` si Vercel no lo establece. Configuralas en Vercel, nunca en el `.env` local.
+- **Frontend:** no necesita variable de API para el despliegue actual. `frontend/vercel.json` reescribe `/api/*` hacia el backend. `VITE_API_URL` solo corresponde a desarrollo local si se cambia el puerto/origen por defecto.
 
 El frontend proxifica `/api/*` al backend mediante un rewrite externo de Vercel. Las cookies HTTP-only, `Secure` y `SameSite=Lax` quedan bajo el mismo origen del frontend. Configurá `FRONTEND_URL` con `https://tagliaferro.vercel.app` en el proyecto backend; en producción no se permite localhost ni un origen arbitrario.
 
@@ -24,8 +24,8 @@ Vercel compila el backend Express como función y el frontend con Vite en `dist`
 
 ## Funcionalidades
 
-Autenticación con sesiones y permisos por rol, catálogo, inventario y POS siguen en funcionamiento. Se conservan las consultas del historial de pedidos. Crear nuevos pedidos online está deshabilitado y no se simulan pagos ni confirmaciones. Las ventas presenciales y sus medios de pago no dependen de ese checkout.
+Autenticación con sesiones y permisos por rol, catálogo, inventario, POS y seguimiento de proyectos están implementados. Checkout Pro crea preferencias desde el backend, reserva existencias y procesa el webhook firmado después de verificar el pago en la API de Mercado Pago. La integración queda inactiva si faltan credenciales y no está validada en un entorno de pruebas o producción.
 
 ## Validación
 
-`npm run test:unit` ejecuta las pruebas unitarias. La suite `npm run test:integration` escribe fixtures temporales en la base configurada y luego los elimina; solo debe ejecutarse contra una base de pruebas aislada autorizada, nunca contra producción.
+`npm run test:unit` ejecuta pruebas unitarias. La suite `npm run test:integration` crea y elimina fixtures y exige `ALLOW_DESTRUCTIVE_TEST_DATABASE=true`; ejecutala solo con una URL a una base de pruebas aislada, nunca contra producción. Revisá `docs/INFORME_PRUEBAS.md` para los resultados de esta revisión.
